@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth, useSignUp } from "@clerk/nextjs";
-import { createSignupAccount, verifySignupAccount, signupAccountPath } from "@/lib/signup-account";
+import { useAuth, useSignUp, useUser } from "@clerk/nextjs";
+import { createSignupAccount, verifySignupAccount, signupAccountPath, hasSignupLogin } from "@/lib/signup-account";
 import { BotIdClient } from "botid/client";
 import { affiliationForRole } from "@/lib/options";
 import { useAutoSave } from "@/lib/use-auto-save";
@@ -101,7 +101,9 @@ export default function SignupForm({
   joinToken,
   refToken,
   defaultAccountType,
+  initialIdentity,
 }: {
+  initialIdentity?: { firstName: string; lastName: string; email: string };
   joinToken?: string;
   // Referral attribution token from a "spread the word" link (?ref=…). Passed to
   // createDraftSignup so the new family records who referred them. No PII.
@@ -112,7 +114,7 @@ export default function SignupForm({
 } = {}) {
   const router = useRouter();
   const [v, setV] = useState(() =>
-    defaultAccountType ? { ...empty, accountType: defaultAccountType } : empty,
+    ({ ...empty, ...initialIdentity, ...(defaultAccountType ? { accountType: defaultAccountType } : {}) }),
   );
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<string | null>(null);
@@ -123,7 +125,8 @@ export default function SignupForm({
   // leaves someone without a way to sign back in). The password lives ONLY in
   // this state and goes ONLY to Clerk: it is never part of `v`, so the
   // localStorage draft and the signups row never see it.
-  const { isSignedIn } = useAuth();
+  const { isSignedIn, isLoaded } = useAuth();
+  const { user } = useUser();
   const { signUp } = useSignUp();
   const [password, setPassword] = useState("");
   // "verify" = the Clerk instance wants the email confirmed before the account
@@ -291,7 +294,8 @@ export default function SignupForm({
   async function createClerkAccount(id: string) {
     setAccountRecoveryId(id);
     if (isSignedIn) {
-      proceedSignedIn(id);
+      if (hasSignupLogin(user ?? null, v.email)) proceedSignedIn(id);
+      else router.push(signupAccountPath(id, "profile"));
       return;
     }
     const result = await createSignupAccount(signUp, v.email, password);
@@ -339,6 +343,10 @@ export default function SignupForm({
   }
 
   async function onContinue() {
+    if (!isLoaded) {
+      setMessage("Your login is still loading. Please try again in a moment.");
+      return;
+    }
     // Terms are enforced HERE rather than by disabling the button.
     //
     // A disabled submit is a dead end: the member gets no explanation, and if the

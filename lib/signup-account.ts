@@ -75,7 +75,7 @@ export function hasSignupLogin(
     emailAddresses: {
       id: string;
       emailAddress: string;
-      verification: { status: string } | null;
+      verification: { status: string | null } | null;
     }[];
   } | null,
   email: string,

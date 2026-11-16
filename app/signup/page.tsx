@@ -1,9 +1,12 @@
 import type { Metadata } from "next";
+import { currentUser } from "@clerk/nextjs/server";
+import { redirect } from "next/navigation";
+import { hasSignupLogin } from "@/lib/signup-account";
 import SignupForm from "./signup-form";
 import { PixelMascot } from "@/components/pixel-mascot";
 import { IrlTooltip } from "@/components/irl-tooltip";
 import InterestTiles from "./interest-tiles";
-import { getChildrenCount } from "@/lib/db/signups";
+import { getChildrenCount, getSignupByEmail } from "@/lib/db/signups";
 import { getInterestPool } from "@/lib/interests";
 import { sanitizeRefToken, REFERRAL_PARAM, REFERRAL_AS_PARAM } from "@/lib/referral";
 import { getReferrerLine } from "@/lib/referral-names";
@@ -31,6 +34,15 @@ export default async function SignupPage({
   // token is sanitized; an unknown-but-well-formed token is just stored as
   // provenance. `as=student` defaults the friend into the student signup path.
   const sp = await searchParams;
+  const user = await currentUser();
+  const email = user?.primaryEmailAddress?.emailAddress ?? "";
+  if (hasSignupLogin(user, email)) {
+    const existing = await getSignupByEmail(email);
+    if (existing) {
+      const extra = (existing.extra ?? {}) as Record<string, unknown>;
+      redirect(extra.onboardedAt ? "/family" : `/signup/thanks?id=${encodeURIComponent(existing.id)}`);
+    }
+  }
   const ref = sanitizeRefToken(firstParam(sp[REFERRAL_PARAM])) ?? undefined;
   const defaultAccountType =
     firstParam(sp[REFERRAL_AS_PARAM]) === "student" ? ("student" as const) : undefined;
@@ -79,6 +91,9 @@ export default async function SignupPage({
 
         <div className="mt-10">
           <SignupForm
+            initialIdentity={hasSignupLogin(user, email) ? {
+              firstName: user?.firstName ?? "", lastName: user?.lastName ?? "", email,
+            } : undefined}
             refToken={ref}
             defaultAccountType={defaultAccountType}
           />
